@@ -37,14 +37,17 @@ one-sided closed forms: `[0, 1 − c^(1/n)]` and `[c^(1/n), 1]`.
 
 ## `hpd_interval`
 
-Normalising `L(p)` over `p` *is* the
-Beta(k+1, n−k+1) density, so that PR's search for the horizontal cut enclosing
-95% of the mass is the highest-density region of that Beta. Parametrising by
-the lower-tail mass `t` makes the interval `[ppf(t), ppf(t+1−α)]`, whose width
-is stationary exactly where the density matches at both ends — one more
-monotone, bracketed bisection. It agrees with the grid version to 8e-06, below
-that version's own 1e-5 grid step, and runs ~20× faster; the likelihood
-interval is ~300× faster than the grid search.
+The highest-density interval of the flat-prior posterior. Normalising the
+binomial likelihood `L(p) = p^k (1−p)^(n−k)` over `p` gives the
+Beta(k+1, n−k+1) density, and the HPD region is the shortest interval holding
+`1−α` of its mass — equivalently, a horizontal cut of the density with the cut
+level chosen so the enclosed mass is `1−α` (where the likelihood interval
+instead fixes the level by Wilks' theorem). Parametrising by the lower-tail
+mass `t` makes the interval `[ppf(t), ppf(t+1−α)]`, whose width is stationary
+exactly where the density matches at both ends — one more monotone, bracketed
+bisection, with mass correct to ~1e-10 and endpoint densities equal to ~1e-14.
+When `k` is 0 or `n` the density is monotone and the region runs one-sided to
+the boundary.
 
 ## Which to use
 
