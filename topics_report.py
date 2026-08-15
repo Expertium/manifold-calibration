@@ -131,8 +131,7 @@ def plot(rows, args):
     x = np.array([r["base_rate"] for r in rows], dtype=float)
     y = np.array([r["early"] for r in rows], dtype=float)
     n = np.array([r["n"] for r in rows], dtype=float)
-    sizes = 25 + 200 * (np.log10(n) - np.log10(n.min())) / max(
-        1e-9, np.log10(n.max()) - np.log10(n.min()))
+    sizes = 25 + 200 * (n - n.min()) / max(1e-9, n.max() - n.min())
     sc = ax.scatter(x, y, s=sizes, c=y, cmap="RdYlGn", edgecolor="black",
                     lw=0.4, alpha=0.9)
 
@@ -174,7 +173,7 @@ def plot(rows, args):
                   fontsize=12)
     ax.set_title(f"Forecast skill by topic\n"
                  f"{len(rows)} Manifold topics with the most resolved "
-                 f"markets   |   point size = market count", fontsize=13)
+                 f"markets   |   bubble size = market count", fontsize=13)
     ax.grid(alpha=0.35)
     ax.set_axisbelow(True)
     fig.colorbar(sc, ax=ax, fraction=0.03, pad=0.02).set_label(
