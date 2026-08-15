@@ -3,11 +3,11 @@
 Base rates and forecast skill broken down by Manifold topic.
 
 Joins data/topics.jsonl (written by scrape_topics.py) onto the study markets
-and reports, for every topic with enough markets, the YES base rate and the
+and reports, for the N topics with the most markets, the YES base rate and the
 Brier skill score at each snapshot.
 
     python topics_report.py
-    python topics_report.py --min-markets 200 --sort base_rate
+    python topics_report.py --topics 50 --sort base_rate
 
 Markets carry several topics each, so the groups overlap and the counts do not
 sum to the study total. A market with four tags contributes to four rows.
@@ -53,7 +53,9 @@ def load_topics():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--min-markets", type=int, default=285)
+    ap.add_argument("--topics", type=int, default=100,
+                    help="how many topics to include, taking those with the "
+                         "most markets (default 100)")
     ap.add_argument("--min-lifetime-days", type=float, default=7.0)
     ap.add_argument("--min-bettors", type=int, default=3)
     ap.add_argument("--sort", default="early",
@@ -82,10 +84,9 @@ def main():
     print(f"{len(by_topic):,} distinct topics; {untagged:,} markets carry no "
           f"topic at all")
 
+    biggest = sorted(by_topic.items(), key=lambda kv: -len(kv[1]))[:args.topics]
     rows = []
-    for t, rs in by_topic.items():
-        if len(rs) < args.min_markets:
-            continue
+    for t, rs in biggest:
         o = np.array([r["outcome"] for r in rs], dtype=float)
         row = {"topic": t, "n": len(rs), "base_rate": float(o.mean())}
         for key, short, _ in SNAPSHOTS:
@@ -98,7 +99,8 @@ def main():
     keymap = {"topic": lambda r: r["topic"], "n": lambda r: -r["n"],
               "base_rate": lambda r: -r["base_rate"]}
     rows.sort(key=keymap.get(args.sort, lambda r: -r[args.sort]))
-    print(f"{len(rows):,} topics with >= {args.min_markets} markets\n")
+    print(f"top {len(rows):,} topics by market count "
+          f"(smallest has {min(r['n'] for r in rows):,} markets)\n")
 
     show = rows
     if args.top and len(rows) > 2 * args.top:
@@ -147,9 +149,8 @@ def plot(rows, args):
     ax.set_ylabel("Brier skill score, late snapshot  (higher = better)",
                   fontsize=12)
     ax.set_title(f"Forecast skill by topic\n"
-                 f"{len(rows)} Manifold topics with >= {args.min_markets} "
-                 f"resolved markets   |   point size = market count",
-                 fontsize=13)
+                 f"the {len(rows)} Manifold topics with the most resolved "
+                 f"markets   |   point size = market count", fontsize=13)
     ax.grid(alpha=0.35)
     ax.set_axisbelow(True)
     fig.colorbar(sc, ax=ax, fraction=0.03, pad=0.02).set_label(
