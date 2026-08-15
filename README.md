@@ -45,7 +45,7 @@ so each snapshot costs one small request. Markets with ≤60 unique traders take
 a shortcut — their whole history fits in one 1000-bet page, answering all three
 snapshots at once. In practice: ~1.3 requests per market.
 
-## Filters (on by default, and they matter)
+## Filters (on by default)
 
 `--min-lifetime-days 7`
 
