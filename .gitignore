@@ -1,0 +1,15 @@
+# scraped data (tens of MB; regenerate with scrape.py / scrape_topics.py)
+data/
+
+# generated figures (regenerate with analyze.py / topics_report.py)
+plots/
+
+# run logs
+*.log
+
+__pycache__/
+
+# machine-specific detached-launch helpers (absolute local paths)
+detach.ps1
+run_scrape.cmd
+run_topics.cmd
