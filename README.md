@@ -57,7 +57,7 @@ Pass `--min-lifetime-days 0 --min-bettors 0` to see the unfiltered version.
 
 ## Metrics
 
-**Brier score** (`mean((p − o)²)`, lower better, 0.25 = always saying 50%) and
+**Brier score** (`mean((p − o)²)`, lower is better, 0.25 = always saying 50%) and
 **log loss**, plus Murphy's decomposition
 `Brier = reliability − resolution + uncertainty` and the **Brier skill score**
 `1 − Brier/uncertainty` — 1 is perfect, 0 is no better than always predicting
