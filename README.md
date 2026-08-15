@@ -1,6 +1,6 @@
 # Manifold prediction-market calibration
 
-Are Manifold's prediction markets calibrated — when the market says 70%, does it
+Are Manifold's prediction markets calibrated — when the market says 70%, do such events
 happen 70% of the time? And do markets get *better* as resolution approaches?
 
 Four scripts:
@@ -18,9 +18,7 @@ No API key is needed for any of this -- Manifold's read endpoints are public
 ## What gets collected
 
 Every resolved **YES/NO binary** market (`MKT` = resolved-to-a-probability and
-`CANCEL` = N/A are dropped, since we need a hard outcome to score against; CASH
-sweepstakes markets are dropped because they mirror the MANA ones and would
-double-count).
+`CANCEL` = N/A are dropped).
 
 For each market, the probability at three moments in its life:
 
@@ -49,15 +47,11 @@ snapshots at once. In practice: ~1.3 requests per market.
 
 ## Filters (on by default, and they matter)
 
-**`--min-lifetime-days 7`.** Under 6 days the `early` (+3d) and `late` (−3d)
-snapshots cross over; under ~3 days the `late` snapshot lands at creation,
-before anyone traded, so its "probability" is just the opening price (usually
-0.50) rather than a forecast. Unfiltered, this *inverts* the headline result,
-making the early snapshot look more accurate than the late one — an artifact,
-not a finding. It bites hard because resolved markets skew short-lived.
+`--min-lifetime-days 7`
 
-**`--min-bettors 3`.** One or two traders is a single person's opinion, not a
-market forecast.
+`--min-bettors 3`
+
+These two filters filter out roughly a third of all markets.
 
 Pass `--min-lifetime-days 0 --min-bettors 0` to see the unfiltered version.
 
@@ -68,8 +62,7 @@ Pass `--min-lifetime-days 0 --min-bettors 0` to see the unfiltered version.
 `Brier = reliability − resolution + uncertainty` and the **Brier skill score**
 `1 − Brier/uncertainty` — 1 is perfect, 0 is no better than always predicting
 the group's base rate, below 0 is worse. Skill is what makes groups with
-different base rates comparable: a lopsided group has a lower irreducible
-Brier floor, and skill divides that floor out.
+different base rates comparable.
 
 ECE is deliberately **not** reported: it is not a proper scoring rule (it can
 be improved by genuinely worse forecasts), depends on an arbitrary binning,
@@ -92,8 +85,8 @@ filters and writes `data/topics.jsonl` as a permanent join table.
 `topics_report.py` then reports, per topic, the YES base rate and the Brier
 skill score at each snapshot. Skill is measured against each topic's *own*
 base rate, so a lopsided topic gets no credit for being lopsided. Markets
-carry several tags, so topic groups overlap and counts do not sum to the
-study total.
+carry several tags, so topic groups overlap and **topic counts do not sum to the
+total number of markets**.
 
 ## Output
 
