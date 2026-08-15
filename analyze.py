@@ -204,7 +204,7 @@ def linear_calibration(p, o):
 
 CI_METHODS = {
     "likelihood": binomial_ci.likelihood_interval,   # Orawo (2021), Section 2.3
-    "hpd": binomial_ci.hpd_interval,                 # fsrs-optimizer PR #166
+    "hpd": binomial_ci.hpd_interval,                 # flat-prior posterior HPD
     "wilson": binomial_ci.wilson_interval,
     "clopper-pearson": binomial_ci.clopper_pearson_interval,
     "wald": binomial_ci.wald_interval,
@@ -269,7 +269,7 @@ def calibration_plot(p, o, title, subtitle, path, n_bins=20, min_bin=20,
     ax.grid(alpha=0.35, zorder=0)
     ax.set_axisbelow(True)
 
-    # counts on a twin axis, same visual language as the FSRS calibration plot
+    # market counts as a histogram on a twin axis, under the calibration curve
     ax2 = ax.twinx()
     counts = [b["n"] for b in bins]
     centers = [(b["lo"] + b["hi"]) / 2 for b in bins]

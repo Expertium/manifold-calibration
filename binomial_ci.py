@@ -152,19 +152,16 @@ def likelihood_interval(k, n, alpha=0.05):
 
 
 # --------------------------------------------------------------------------
-# the highest-density interval (what the fsrs-optimizer PR actually computes)
+# the highest-density interval
 # --------------------------------------------------------------------------
 
 def hpd_interval(k, n, alpha=0.05):
-    """Highest-density interval of the normalised likelihood.
+    """Highest-density interval of the flat-prior posterior.
 
-    This is the method in fsrs-optimizer PR #166, computed exactly instead of
-    on a grid. That PR normalises L(p) over a 100,000-point grid and then hunts
-    with Brent for the horizontal cut level enclosing 1-alpha of the mass.
-
-    Normalising p**k * (1-p)**(n-k) over p *is* the Beta(k+1, n-k+1) density
-    (the flat-prior posterior), so the interval being sought is that Beta's
-    highest-density region -- and it can be found directly.
+    Normalising p**k * (1-p)**(n-k) over p gives the Beta(k+1, n-k+1) density
+    (the flat-prior posterior). The HPD region is the shortest interval
+    holding 1-alpha of its mass -- equivalently, a horizontal cut of the
+    density with the cut level chosen so the enclosed mass is 1-alpha.
 
     Parametrise by the mass t left in the lower tail: the interval is
     [ppf(t), ppf(t + 1 - alpha)], whose width is stationary exactly when the
