@@ -157,7 +157,7 @@ def plot(rows, args):
                   (-6, -11, "right"), (0, 9, "center"), (0, -16, "center")]
     for i in sorted(notable, key=lambda i: -n[i]):
         for dx, dy, ha in candidates:
-            a = ax.annotate(rows[i]["topic"][:24], (x[i], y[i]),
+            a = ax.annotate(rows[i]["topic"], (x[i], y[i]),
                             textcoords="offset points", xytext=(dx, dy),
                             ha=ha, fontsize=7.5, alpha=0.85)
             bb = a.get_window_extent(renderer).expanded(1.1, 1.15)
