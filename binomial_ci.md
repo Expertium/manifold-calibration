@@ -65,6 +65,4 @@ the wider range the ordering reverses sharply: the fixed Wilks level is an
 asymptotic approximation that degrades at extreme `p`, while the HPD keeps
 near-nominal coverage and is slightly shorter besides.
 
-Calibration plots put their most populated bins right at 0 and 1, which is the
-regime where that gap opens up, so **`hpd` is the default**. Clopper-Pearson
-never drops below nominal but pays ~10% extra width for it.
+`hpd` is the default.
