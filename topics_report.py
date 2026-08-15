@@ -126,35 +126,59 @@ def main():
 
 
 def plot(rows, args):
-    """Base rate vs late skill, one point per topic."""
+    """Base rate vs early skill, one point per topic."""
     fig, ax = plt.subplots(figsize=(12, 8.5))
-    x = [r["base_rate"] for r in rows]
-    y = [r["late"] for r in rows]
+    x = np.array([r["base_rate"] for r in rows], dtype=float)
+    y = np.array([r["early"] for r in rows], dtype=float)
     n = np.array([r["n"] for r in rows], dtype=float)
     sizes = 25 + 200 * (np.log10(n) - np.log10(n.min())) / max(
         1e-9, np.log10(n.max()) - np.log10(n.min()))
     sc = ax.scatter(x, y, s=sizes, c=y, cmap="RdYlGn", edgecolor="black",
                     lw=0.4, alpha=0.9)
 
-    # label the extremes rather than every point, or it turns to soup
-    order = sorted(range(len(rows)), key=lambda i: y[i])
-    for i in order[:8] + order[-8:] + sorted(
-            range(len(rows)), key=lambda i: -n[i])[:6]:
-        ax.annotate(rows[i]["topic"][:24], (x[i], y[i]),
-                    textcoords="offset points", xytext=(6, 4), fontsize=7.5,
-                    alpha=0.85)
+    # Label only the notable topics, or it turns to soup: the biggest, and
+    # the extremes of both axes.
+    notable = set()
+    for key in (-n, -y, y, -x, x):
+        notable.update(np.argsort(key, kind="stable")[:5])
 
     ax.axhline(0, color="grey", lw=1, ls=":")
+    ax.margins(0.06)
+
+    # Place labels with collision handling: try several positions around each
+    # point and keep the first that neither overlaps an already-placed label
+    # nor leaves the axes. Points are labelled in order of market count, so
+    # when a cluster of labels cannot all fit, the biggest topic wins.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ax_box = ax.get_window_extent(renderer)
+    placed = []
+    candidates = [(6, 4, "left"), (-6, 4, "right"), (6, -11, "left"),
+                  (-6, -11, "right"), (0, 9, "center"), (0, -16, "center")]
+    for i in sorted(notable, key=lambda i: -n[i]):
+        for dx, dy, ha in candidates:
+            a = ax.annotate(rows[i]["topic"][:24], (x[i], y[i]),
+                            textcoords="offset points", xytext=(dx, dy),
+                            ha=ha, fontsize=7.5, alpha=0.85)
+            bb = a.get_window_extent(renderer).expanded(1.1, 1.15)
+            ok = (bb.x0 >= ax_box.x0 and bb.x1 <= ax_box.x1
+                  and bb.y0 >= ax_box.y0 and bb.y1 <= ax_box.y1
+                  and not any(bb.overlaps(p) for p in placed))
+            if ok:
+                placed.append(bb)
+                break
+            a.remove()
+        # all candidate spots collide -> this label is dropped entirely
     ax.set_xlabel("YES base rate of the topic", fontsize=12)
-    ax.set_ylabel("Brier skill score, late snapshot  (higher = better)",
+    ax.set_ylabel("Brier skill score, early snapshot  (higher = better)",
                   fontsize=12)
     ax.set_title(f"Forecast skill by topic\n"
-                 f"the {len(rows)} Manifold topics with the most resolved "
+                 f"{len(rows)} Manifold topics with the most resolved "
                  f"markets   |   point size = market count", fontsize=13)
     ax.grid(alpha=0.35)
     ax.set_axisbelow(True)
     fig.colorbar(sc, ax=ax, fraction=0.03, pad=0.02).set_label(
-        "late skill", fontsize=10)
+        "early skill", fontsize=10)
     fig.tight_layout()
     path = os.path.join(PLOTS, f"skill_by_topic{args.tag}.png")
     fig.savefig(path, dpi=140)
