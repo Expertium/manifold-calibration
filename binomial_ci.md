@@ -37,9 +37,7 @@ one-sided closed forms: `[0, 1 − c^(1/n)]` and `[c^(1/n), 1]`.
 
 ## `hpd_interval`
 
-The method from
-[fsrs-optimizer PR #166](https://github.com/open-spaced-repetition/fsrs-optimizer/pull/166),
-computed exactly instead of on a grid. Normalising `L(p)` over `p` *is* the
+Normalising `L(p)` over `p` *is* the
 Beta(k+1, n−k+1) density, so that PR's search for the horizontal cut enclosing
 95% of the mass is the highest-density region of that Beta. Parametrising by
 the lower-tail mass `t` makes the interval `[ppf(t), ppf(t+1−α)]`, whose width
