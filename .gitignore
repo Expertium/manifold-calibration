@@ -6,10 +6,10 @@ plots/
 
 # run logs
 *.log
+*.log.*
 
 __pycache__/
 
 # machine-specific detached-launch helpers (absolute local paths)
 detach.ps1
-run_scrape.cmd
-run_topics.cmd
+run_*.cmd
