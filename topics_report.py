@@ -6,8 +6,8 @@ Joins data/topics.jsonl (written by scrape_topics.py) onto the study markets
 and reports, for the N topics with the most markets, the YES base rate and the
 Brier skill score at each snapshot.
 
-    python topics_report.py
-    python topics_report.py --topics 50 --sort base_rate
+Settings live in the constants block below (no command-line arguments): edit
+them there and run the file.
 
 Markets carry several topics each, so the groups overlap and the counts do not
 sum to the study total. A market with four tags contributes to four rows.
@@ -18,7 +18,6 @@ topic resolves YES x% of the time", which is the comparison that matters when
 asking whether some subjects are harder to forecast than others.
 """
 
-import argparse
 import json
 import os
 from collections import defaultdict
@@ -51,23 +50,22 @@ def load_topics():
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--topics", type=int, default=100,
-                    help="how many topics to include, taking those with the "
-                         "most markets (default 100)")
-    ap.add_argument("--min-lifetime-days", type=float, default=7.0)
-    ap.add_argument("--min-bettors", type=int, default=3)
-    ap.add_argument("--sort", default="early",
-                    choices=["late", "mid", "early", "base_rate", "n", "topic"])
-    ap.add_argument("--top", type=int, default=0,
-                    help="show only the N best and N worst by the sort key")
-    ap.add_argument("--tag", default="")
-    args = ap.parse_args()
+# --------------------------------------------------------------------------
+# settings -- edit here and run the file; there are no command-line arguments
+# --------------------------------------------------------------------------
 
+TOPICS = 100              # how many topics, taking those with the most markets
+MIN_LIFETIME_DAYS = 7.0   # must match the filters used in the analysis
+MIN_BETTORS = 3
+SORT = "early"            # "late", "mid", "early", "base_rate", "n" or "topic"
+TOP = 0                   # nonzero: print only the N best and N worst rows
+TAG = ""                  # suffix for output filenames
+
+
+def main():
     recs = [r for r in load(os.path.join(DATA, "probs.jsonl"))
-            if r["lifetime_days"] >= args.min_lifetime_days
-            and r["bettors"] >= args.min_bettors]
+            if r["lifetime_days"] >= MIN_LIFETIME_DAYS
+            and r["bettors"] >= MIN_BETTORS]
     topics = load_topics()
     have = [r for r in recs if r["id"] in topics]
     print(f"{len(recs):,} study markets, {len(have):,} with topics fetched "
@@ -84,7 +82,7 @@ def main():
     print(f"{len(by_topic):,} distinct topics; {untagged:,} markets carry no "
           f"topic at all")
 
-    biggest = sorted(by_topic.items(), key=lambda kv: -len(kv[1]))[:args.topics]
+    biggest = sorted(by_topic.items(), key=lambda kv: -len(kv[1]))[:TOPICS]
     rows = []
     for t, rs in biggest:
         o = np.array([r["outcome"] for r in rs], dtype=float)
@@ -98,13 +96,13 @@ def main():
 
     keymap = {"topic": lambda r: r["topic"], "n": lambda r: -r["n"],
               "base_rate": lambda r: -r["base_rate"]}
-    rows.sort(key=keymap.get(args.sort, lambda r: -r[args.sort]))
+    rows.sort(key=keymap.get(SORT, lambda r: -r[SORT]))
     print(f"top {len(rows):,} topics by market count "
           f"(smallest has {min(r['n'] for r in rows):,} markets)\n")
 
     show = rows
-    if args.top and len(rows) > 2 * args.top:
-        show = rows[:args.top] + [None] + rows[-args.top:]
+    if TOP and len(rows) > 2 * TOP:
+        show = rows[:TOP] + [None] + rows[-TOP:]
 
     print(f"{'topic':<34}{'n':>7}{'base rate':>10}"
           f"{'skill:early':>12}{'mid':>8}{'late':>8}")
@@ -116,16 +114,16 @@ def main():
         print(f"{r['topic'][:33]:<34}{r['n']:>7,}{r['base_rate']:>10.3f}"
               f"{r['early']:>12.3f}{r['mid']:>8.3f}{r['late']:>8.3f}")
 
-    with open(os.path.join(DATA, f"topics_summary{args.tag}.json"), "w",
+    with open(os.path.join(DATA, f"topics_summary{TAG}.json"), "w",
               encoding="utf-8") as f:
         json.dump(rows, f, indent=1)
-    print(f"\nwrote data/topics_summary{args.tag}.json")
+    print(f"\nwrote data/topics_summary{TAG}.json")
 
     if rows:
-        plot(rows, args)
+        plot(rows)
 
 
-def plot(rows, args):
+def plot(rows):
     """Base rate vs early skill, one point per topic."""
     fig, ax = plt.subplots(figsize=(12, 8.5))
     x = np.array([r["base_rate"] for r in rows], dtype=float)
@@ -179,7 +177,7 @@ def plot(rows, args):
     fig.colorbar(sc, ax=ax, fraction=0.03, pad=0.02).set_label(
         "early skill", fontsize=10)
     fig.tight_layout()
-    path = os.path.join(PLOTS, f"skill_by_topic{args.tag}.png")
+    path = os.path.join(PLOTS, f"skill_by_topic{TAG}.png")
     fig.savefig(path, dpi=140)
     plt.close(fig)
     print(f"wrote plots/{os.path.basename(path)}")

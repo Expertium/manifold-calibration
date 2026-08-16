@@ -11,13 +11,11 @@ To keep that bounded it fetches only the markets that pass the study filters
 (lifetime >= 7 days, >= 3 traders) rather than every resolved market -- about a
 third fewer requests.
 
-    python scrape_topics.py
-
 Appends one {id, topics} line per market to data/topics.jsonl and skips ids
-already present, so it can be interrupted and restarted.
+already present, so it can be interrupted and restarted. Settings live in the
+constants block below (no command-line arguments).
 """
 
-import argparse
 import json
 import os
 import sys
@@ -58,17 +56,20 @@ def already_done():
     return done
 
 
+# --------------------------------------------------------------------------
+# settings -- edit here and run the file; there are no command-line arguments
+# --------------------------------------------------------------------------
+
+RPM = 450                 # requests per minute; the API allows 500
+WORKERS = 8
+MIN_LIFETIME_DAYS = 7.0   # must match the filters used in the analysis
+MIN_BETTORS = 3
+
+
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--rpm", type=int, default=400)
-    ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--min-lifetime-days", type=float, default=7.0)
-    ap.add_argument("--min-bettors", type=int, default=3)
-    args = ap.parse_args()
+    scrape._limiter = scrape.RateLimiter(RPM)
 
-    scrape._limiter = scrape.RateLimiter(args.rpm)
-
-    ids = wanted_ids(args.min_lifetime_days, args.min_bettors)
+    ids = wanted_ids(MIN_LIFETIME_DAYS, MIN_BETTORS)
     done = already_done()
     todo = [i for i in ids if i not in done]
     print(f"{len(ids):,} markets in scope, {len(done):,} already fetched, "
@@ -101,7 +102,7 @@ def main():
                       end="\r", flush=True)
 
     with open(OUT, "a", encoding="utf-8") as out:
-        with ThreadPoolExecutor(max_workers=args.workers) as ex:
+        with ThreadPoolExecutor(max_workers=WORKERS) as ex:
             list(ex.map(work, todo))
 
     print(f"\ndone: {state['n']:,} fetched, {state['failed']:,} failed")

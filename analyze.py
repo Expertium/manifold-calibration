@@ -19,24 +19,23 @@ where reliability measures calibration error (lower better), resolution
 measures how far forecasts stray from the base rate (higher better), and
 uncertainty is the irreducible base-rate variance o_bar*(1-o_bar).
 
-    python analyze.py
-    python analyze.py --min-lifetime-days 0 --min-bettors 0   # unfiltered
-    python analyze.py --min-bettors 10
+Settings live in the constants block below main's helper functions (no
+command-line arguments): edit them there and run the file.
 
 Two filters are on by default, and both matter:
 
-  --min-lifetime-days 7  Short markets corrupt the whole comparison. If a market
-      lived less than 6 days the "early" (+3d) and "late" (-3d) snapshots cross
-      over each other, and under ~3 days the "late" snapshot lands at creation,
-      before anyone had traded -- so its "probability" is just the opening price
-      (usually 0.50), not a forecast. Unfiltered, that inverts the result and
-      makes the early snapshot look more accurate than the late one.
+  MIN_LIFETIME_DAYS = 7  Short markets corrupt the whole comparison. If a
+      market lived less than 6 days the "early" (+3d) and "late" (-3d)
+      snapshots cross over each other, and under ~3 days the "late" snapshot
+      lands at creation, before anyone had traded -- so its "probability" is
+      just the opening price (usually 0.50), not a forecast. Unfiltered, that
+      inverts the result and makes the early snapshot look more accurate than
+      the late one.
 
-  --min-bettors 3  A market with one or two traders is one person's opinion at
+  MIN_BETTORS = 3  A market with one or two traders is one person's opinion at
       whatever price the AMM happened to sit at, not a market forecast.
 """
 
-import argparse
 import json
 import os
 
@@ -607,76 +606,61 @@ def skill_heatmap(recs, plots_dir, tag="", x_field="volume",
 
 
 # --------------------------------------------------------------------------
+# settings -- edit here and run the file; there are no command-line arguments
+# --------------------------------------------------------------------------
+
+MIN_LIFETIME_DAYS = 7.0   # drop markets that lived less than this
+MIN_BETTORS = 3           # drop markets with fewer unique traders
+BINS = 20                 # probability bins on the calibration plots
+MIN_BIN = 20              # hide calibration bins with fewer markets than this
+CI = "hpd"                # error-band method; see CI_METHODS for the options
+ALPHA = 0.05              # 1 - confidence level (0.05 -> 95% bands)
+FIT = "none"              # "linear", "logistic", "both" or "none"
+X_AXIS = ["volume", "lifespan"]   # accuracy-vs-what plots; "liquidity" also works
+HEATMAP_BINS = 6          # grid size for the volume x lifespan skill heatmap
+ACTIVITY_BINS = 12        # target bin count on the accuracy-vs-activity plots
+TAG = ""                  # suffix for output filenames
+
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--min-lifetime-days", type=float, default=7.0,
-                    help="drop markets that lived less than this (default 7)")
-    ap.add_argument("--min-bettors", type=int, default=3,
-                    help="drop markets with fewer unique traders (default 3)")
-    ap.add_argument("--bins", type=int, default=20)
-    ap.add_argument("--min-bin", type=int, default=20,
-                    help="hide calibration bins with fewer markets than this")
-    ap.add_argument("--ci", default="hpd", choices=sorted(CI_METHODS),
-                    help="confidence interval method for the error band "
-                         "(default: hpd, which holds up best at extreme p)")
-    ap.add_argument("--alpha", type=float, default=0.05,
-                    help="1 - confidence level (default 0.05 for 95%%)")
-    ap.add_argument("--fit", default="none",
-                    choices=["linear", "logistic", "both", "none"],
-                    help="calibration fit drawn on the plot (default: linear, "
-                         "in probability units; 'logistic' fits in log-odds)")
-    ap.add_argument("--x-axis", nargs="+", default=["volume", "lifespan"],
-                    choices=sorted(X_AXES),
-                    help="what to plot accuracy against (default: volume, i.e. "
-                         "total mana traded; 'liquidity' is the creator's "
-                         "subsidy, which is a different thing)")
-    ap.add_argument("--heatmap-bins", type=int, default=6,
-                    help="grid size for the volume x lifespan skill heatmap")
-    ap.add_argument("--activity-bins", type=int, default=12,
-                    help="target number of bins on that axis (default 12); the "
-                         "actual count depends on how tied values fall")
-    ap.add_argument("--tag", default="", help="suffix for output filenames")
-    args = ap.parse_args()
 
     recs = load(os.path.join(DATA, "probs.jsonl"))
     total = len(recs)
     recs = [r for r in recs
-            if r["lifetime_days"] >= args.min_lifetime_days
-            and r["bettors"] >= args.min_bettors]
+            if r["lifetime_days"] >= MIN_LIFETIME_DAYS
+            and r["bettors"] >= MIN_BETTORS]
     if not recs:
         raise SystemExit("no markets left after filtering")
 
     os.makedirs(PLOTS, exist_ok=True)
     print(f"loaded {total} markets, {len(recs)} after filters "
-          f"(lifetime >= {args.min_lifetime_days}d, bettors >= {args.min_bettors})")
+          f"(lifetime >= {MIN_LIFETIME_DAYS}d, bettors >= {MIN_BETTORS})")
     print(f"base rate: {np.mean([r['outcome'] for r in recs]):.4f} YES\n")
 
     o = np.array([r["outcome"] for r in recs], dtype=float)
     results = {}
     for key, short, desc in SNAPSHOTS:
         p = np.array([r[key] for r in recs], dtype=float)
-        fname = f"calibration_{short}{args.tag}.png"
+        fname = f"calibration_{short}{TAG}.png"
         m = calibration_plot(
             p, o,
             title=f"Manifold calibration -- {short} in market life",
             subtitle=f"{len(recs):,} resolved YES/NO markets   |   probability at {desc}",
             path=os.path.join(PLOTS, fname),
-            n_bins=args.bins, min_bin=args.min_bin,
-            ci=args.ci, alpha=args.alpha, fit=args.fit)
+            n_bins=BINS, min_bin=MIN_BIN,
+            ci=CI, alpha=ALPHA, fit=FIT)
         results[short] = m
         print(f"wrote plots/{fname}")
 
-    _, hm_files = skill_heatmap(recs, PLOTS, tag=args.tag,
-                                n_bins=args.heatmap_bins)
+    _, hm_files = skill_heatmap(recs, PLOTS, tag=TAG,
+                                n_bins=HEATMAP_BINS)
     for fname in hm_files:
         print(f"wrote plots/{fname}")
 
     rows = []
-    for field in args.x_axis:
+    for field in X_AXIS:
         r, written = metrics_vs_activity_plots(
-            recs, PLOTS, field=field, tag=args.tag, n_bins=args.activity_bins)
+            recs, PLOTS, field=field, tag=TAG, n_bins=ACTIVITY_BINS)
         rows += r
         for fname in written:
             print(f"wrote plots/{fname}")
@@ -698,13 +682,13 @@ def main():
     print("Gap = MeanPrice - ActualYES: positive means YES is priced too high on average.")
 
     summary = {"n_total": total, "n_used": len(recs),
-               "filters": {"min_lifetime_days": args.min_lifetime_days,
-                           "min_bettors": args.min_bettors},
+               "filters": {"min_lifetime_days": MIN_LIFETIME_DAYS,
+                           "min_bettors": MIN_BETTORS},
                "metrics": results, "metrics_by_activity": rows}
-    with open(os.path.join(DATA, f"summary{args.tag}.json"), "w",
+    with open(os.path.join(DATA, f"summary{TAG}.json"), "w",
               encoding="utf-8") as f:
         json.dump(summary, f, indent=1)
-    print(f"\nwrote data/summary{args.tag}.json")
+    print(f"\nwrote data/summary{TAG}.json")
 
 
 if __name__ == "__main__":

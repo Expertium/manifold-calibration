@@ -6,11 +6,15 @@ happen 70% of the time? And do markets get *better* as resolution approaches?
 Four scripts:
 
 ```bash
-python scrape.py --target 250000     # collect market + probability data (resumable)
-python analyze.py                    # calibration plots, volume/lifespan plots, heatmaps
-python scrape_topics.py              # fetch topic tags for the study markets (resumable)
-python topics_report.py              # base rate + skill score per topic
+python scrape.py           # collect market + probability data (resumable)
+python analyze.py          # calibration plots, volume/lifespan plots, heatmaps
+python scrape_topics.py    # fetch topic tags for the study markets (resumable)
+python topics_report.py    # base rate + skill score per topic
 ```
+
+None of the scripts take command-line arguments -- settings are constants in a
+block near the top of each file, so they can be tweaked in an editor and run
+directly (e.g. from PyCharm).
 
 No API key is needed for any of this -- Manifold's read endpoints are public
 (rate limit 500 requests/min per IP; the scrapers default to staying under it).
@@ -47,13 +51,13 @@ snapshots at once. In practice: ~1.3 requests per market.
 
 ## Filters (on by default)
 
-`--min-lifetime-days 7`
+`MIN_LIFETIME_DAYS = 7`
 
-`--min-bettors 3`
+`MIN_BETTORS = 3`
 
 These two filters filter out roughly a third of all markets.
 
-Pass `--min-lifetime-days 0 --min-bettors 0` to see the unfiltered version.
+Set both to 0 (in `analyze.py`) to see the unfiltered version.
 
 ## Metrics
 
@@ -70,7 +74,7 @@ and is biased upward in small samples.
 
 The error band on the calibration plots comes from `binomial_ci.py`, a
 standalone numpy/scipy module with five exact, vectorised confidence-interval
-methods for a binomial proportion (`--ci` picks one; the default is the
+methods for a binomial proportion (the `CI` setting picks one; the default is the
 highest-density interval, which has the best coverage at extreme
 probabilities). Nothing in it is Manifold-specific — details and coverage
 comparisons in [binomial_ci.md](binomial_ci.md).

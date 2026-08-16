@@ -21,12 +21,12 @@ Everything is read-only and needs no API key. The public rate limit is
 500 requests/min per IP; this script stays under it.
 
 Output lands in data/ and the run is resumable -- re-running continues where it
-left off, and raising --target extends an existing dataset instead of redoing it.
+left off, and raising TARGET extends an existing dataset instead of redoing it.
 
-    python scrape.py --target 20000
+Settings live in the constants block below (no command-line arguments):
+edit them there and run the file.
 """
 
-import argparse
 import json
 import os
 import threading
@@ -338,22 +338,22 @@ def collect(markets, workers):
           f"{state['skipped']} skipped (untraded), {state['failed']} failed")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--target", type=int, default=20000,
-                    help="how many markets to collect (default 20000)")
-    ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--rpm", type=int, default=400,
-                    help="requests per minute; the API allows 500 (default 400)")
-    args = ap.parse_args()
+# --------------------------------------------------------------------------
+# settings -- edit here and run the file; there are no command-line arguments
+# --------------------------------------------------------------------------
 
+TARGET = 250000   # how many markets to collect (stops early if fewer exist)
+WORKERS = 8
+RPM = 450         # requests per minute; the API allows 500
+
+
+def main():
     global _limiter
-    _limiter = RateLimiter(args.rpm)
+    _limiter = RateLimiter(RPM)
 
     os.makedirs(DATA, exist_ok=True)
-    markets = enumerate_markets(args.target)
-    collect(markets[:args.target], args.workers)
+    markets = enumerate_markets(TARGET)
+    collect(markets[:TARGET], WORKERS)
 
 
 if __name__ == "__main__":
