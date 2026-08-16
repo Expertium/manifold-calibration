@@ -22,18 +22,18 @@ uncertainty is the irreducible base-rate variance o_bar*(1-o_bar).
 Settings live in the constants block below main's helper functions (no
 command-line arguments): edit them there and run the file.
 
-Two filters are on by default, and both matter:
+No filters are applied. Cutting the sample on a market's actual lifetime or
+its final trader count would select on information that did not exist when the
+forecast was made, which biases the calibration estimate -- so both are off.
+The per-snapshot volume and trader counts recorded by scrape.py (vol_early,
+traders_early, ...) are knowable at forecast time and can be filtered on
+freely.
 
-  MIN_LIFETIME_DAYS = 7  Short markets corrupt the whole comparison. If a
-      market lived less than 6 days the "early" (+3d) and "late" (-3d)
-      snapshots cross over each other, and under ~3 days the "late" snapshot
-      lands at creation, before anyone had traded -- so its "probability" is
-      just the opening price (usually 0.50), not a forecast. Unfiltered, that
-      inverts the result and makes the early snapshot look more accurate than
-      the late one.
-
-  MIN_BETTORS = 3  A market with one or two traders is one person's opinion at
-      whatever price the AMM happened to sit at, not a market forecast.
+One consequence to keep in mind: markets that lived under ~6 days have their
+"early" (+3d) and "late" (-3d) snapshots cross over, and under ~3 days the
+"late" snapshot lands at creation before anyone traded, so it reports the
+opening price rather than a forecast. That is a real property of the
+unfiltered sample, not something to quietly filter away.
 """
 
 import json
@@ -609,8 +609,8 @@ def skill_heatmap(recs, plots_dir, tag="", x_field="volume",
 # settings -- edit here and run the file; there are no command-line arguments
 # --------------------------------------------------------------------------
 
-MIN_LIFETIME_DAYS = 7.0   # drop markets that lived less than this
-MIN_BETTORS = 3           # drop markets with fewer unique traders
+MIN_LIFETIME_DAYS = 0.0   # no filter: any cut on actual lifetime uses future info
+MIN_BETTORS = 0           # no filter: final trader count is not knowable at forecast time
 BINS = 20                 # probability bins on the calibration plots
 MIN_BIN = 20              # hide calibration bins with fewer markets than this
 CI = "hpd"                # error-band method; see CI_METHODS for the options
@@ -627,7 +627,7 @@ def main():
     recs = load(os.path.join(DATA, "probs.jsonl"))
     total = len(recs)
     recs = [r for r in recs
-            if r["lifetime_days"] >= MIN_LIFETIME_DAYS
+            if r["until_closed_days"] >= MIN_LIFETIME_DAYS
             and r["bettors"] >= MIN_BETTORS]
     if not recs:
         raise SystemExit("no markets left after filtering")

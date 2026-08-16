@@ -55,8 +55,8 @@ def load_topics():
 # --------------------------------------------------------------------------
 
 TOPICS = 100              # how many topics, taking those with the most markets
-MIN_LIFETIME_DAYS = 7.0   # must match the filters used in the analysis
-MIN_BETTORS = 3
+MIN_LIFETIME_DAYS = 0.0   # no filter: any cut on actual lifetime uses future info
+MIN_BETTORS = 0           # no filter: final trader count is not knowable at forecast time
 SORT = "early"            # "late", "mid", "early", "base_rate", "n" or "topic"
 TOP = 0                   # nonzero: print only the N best and N worst rows
 TAG = ""                  # suffix for output filenames
@@ -64,7 +64,7 @@ TAG = ""                  # suffix for output filenames
 
 def main():
     recs = [r for r in load(os.path.join(DATA, "probs.jsonl"))
-            if r["lifetime_days"] >= MIN_LIFETIME_DAYS
+            if r["until_closed_days"] >= MIN_LIFETIME_DAYS
             and r["bettors"] >= MIN_BETTORS]
     topics = load_topics()
     have = [r for r in recs if r["id"] in topics]

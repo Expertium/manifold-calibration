@@ -62,8 +62,8 @@ def already_done():
 
 RPM = 450                 # requests per minute; the API allows 500
 WORKERS = 8
-MIN_LIFETIME_DAYS = 7.0   # must match the filters used in the analysis
-MIN_BETTORS = 3
+MIN_LIFETIME_DAYS = 0.0   # no filter: any cut on actual lifetime uses future info
+MIN_BETTORS = 0           # no filter: final trader count is not knowable at forecast time
 
 
 def main():

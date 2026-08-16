@@ -39,10 +39,6 @@ API = "https://api.manifold.markets/v0"
 DAY_MS = 86_400_000
 WINDOW_MS = 3 * DAY_MS
 
-# Markets with at most this many unique bettors are fetched in one shot (their
-# whole bet history fits in a single 1000-bet page), instead of one request per
-# snapshot. Most Manifold markets are thin, so this roughly halves the run time.
-THIN_BETTORS = 60
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -221,15 +217,76 @@ def snapshot_times(m):
     }
 
 
-def _prob_from_history(bets, t, opening):
-    """Probability at time t given the full ascending bet history."""
-    p = opening
-    for b in bets:
-        if b["createdTime"] <= t:
-            p = b["probAfter"]
-        else:
+def _history_until(mid, until):
+    """Every bet at or before `until`, ascending, plus the opening price.
+
+    Volume and trader counts at time t need the whole bet stream up to t, not
+    just the last bet before it, so the old one-tiny-request-per-snapshot
+    shortcut cannot serve them. Paging forward costs about the same anyway:
+    94% of markets have <= 60 traders and fit in a single 1000-bet page.
+    """
+    bets, cursor, opening = [], None, None
+    while True:
+        params = {"contractId": mid, "limit": 1000, "order": "asc"}
+        if cursor:
+            params["after"] = cursor
+        page = api_get("/bets", params)
+        if not page:
             break
-    return p
+        if opening is None:
+            opening = page[0]["probBefore"]
+        bets.extend(b for b in page if b["createdTime"] <= until)
+        # stop as soon as the stream has run past the last snapshot
+        if len(page) < 1000 or page[-1]["createdTime"] > until:
+            break
+        cursor = page[-1]["id"]
+    return bets, opening
+
+
+def _bet_volume(b):
+    """Mana traded by one bet, counting each matched trade only once.
+
+    A trade between a taker and a resting limit order is recorded on *both*
+    sides, so naively summing every bet's amount double-counts it: +59% on the
+    busiest market checked, and not at all on markets with no limit orders.
+    That error scales with activity, which is the very axis being studied, so
+    it would bend the volume result. Count fills against the AMM always, and
+    matched fills only from the taker's side.
+
+    Reproduces Manifold's own `volume` exactly on markets without limit-order
+    matching, and runs ~5-10% under it on the busiest ones (residual
+    unexplained -- their bet streams do not sum to the reported figure under
+    any simple rule).
+    """
+    if b.get("isRedemption"):
+        return 0.0
+    fills = b.get("fills") or []
+    if not fills:
+        return abs(b.get("amount") or 0.0)
+    taker = b.get("limitProb") is None
+    return sum(abs(f.get("amount") or 0.0) for f in fills
+               if taker or f.get("matchedBetId") is None)
+
+
+def _stats_at(bets, times, opening):
+    """Probability, traded volume and trader count at each snapshot time.
+
+    One pass: the snapshots are visited in time order and the bet index only
+    moves forward, so a market with 50,000 bets still costs one sweep.
+
+    See _bet_volume for how a trade is counted.
+    """
+    out, p, vol, traders, i = {}, opening, 0.0, set(), 0
+    for key, t in sorted(times.items(), key=lambda kv: kv[1]):
+        while i < len(bets) and bets[i]["createdTime"] <= t:
+            b = bets[i]
+            p = b["probAfter"]
+            if not b.get("isRedemption"):
+                vol += _bet_volume(b)
+                traders.add(b["userId"])
+            i += 1
+        out[key] = (p, vol, len(traders))
+    return out
 
 
 def fetch_probs(m):
@@ -237,35 +294,18 @@ def fetch_probs(m):
     times = snapshot_times(m)
     mid = m["id"]
 
-    probs = None
-    # Fast path: thin markets fit their whole history in one request.
-    if (m.get("uniqueBettorCount") or 0) <= THIN_BETTORS:
-        bets = api_get("/bets", {"contractId": mid, "limit": 1000, "order": "asc"})
-        if not bets:
-            return None  # never traded -- no probability to speak of
-        if len(bets) < 1000:
-            opening = bets[0]["probBefore"]
-            probs = {k: _prob_from_history(bets, t, opening) for k, t in times.items()}
+    # A short market has late < early, so page to whichever snapshot is latest.
+    bets, opening = _history_until(mid, max(times.values()))
+    if opening is None:
+        return None  # never traded -- no probability to speak of
 
-    if probs is None:
-        # General path: one tiny query per snapshot, newest bet at or before t.
-        probs, opening = {}, None
-        for key, t in times.items():
-            hit = api_get("/bets", {"contractId": mid, "limit": 1, "beforeTime": t})
-            if hit:
-                probs[key] = hit[0]["probAfter"]
-                continue
-            if opening is None:
-                first = api_get("/bets", {"contractId": mid, "limit": 1, "order": "asc"})
-                if not first:
-                    return None
-                opening = first[0]["probBefore"]
-            probs[key] = opening
-
+    stats = _stats_at(bets, times, opening)
+    probs = {k: v[0] for k, v in stats.items()}
     if any(p is None for p in probs.values()):
         return None
 
     lifetime = end_time(m) - m["createdTime"]
+    until_closed = m.get("closeTime") - m["createdTime"]
     return {
         "id": mid,
         "slug": m.get("slug"),
@@ -274,7 +314,17 @@ def fetch_probs(m):
         "p_early": probs["early"],
         "p_mid": probs["mid"],
         "p_late": probs["late"],
+        # volume and trader count as of each snapshot -- unlike the final
+        # `volume` / `bettors` below, these are knowable at the time the
+        # forecast was made, so filtering on them carries no lookahead
+        "vol_early": stats["early"][1],
+        "vol_mid": stats["mid"][1],
+        "vol_late": stats["late"][1],
+        "traders_early": stats["early"][2],
+        "traders_mid": stats["mid"][2],
+        "traders_late": stats["late"][2],
         "lifetime_days": lifetime / DAY_MS,
+        "until_closed_days": until_closed / DAY_MS,  # <=lifetime_days
         "liquidity": m.get("totalLiquidity") or 0.0,
         "volume": m.get("volume") or 0.0,
         "bettors": m.get("uniqueBettorCount") or 0,
