@@ -435,14 +435,20 @@ def metrics_vs_activity_plots(recs, plots_dir, field="volume", tag="", n_bins=8)
     series, rows = {}, []
     for key, short, _ in SNAPSHOTS:
         pk = np.array([r[key] for r in recs], dtype=float)
+        keep = snapshot_mask(recs, short)
         for name, _, _ in METRIC_PANELS:
             series[(name, short)] = []
         for mask, lo, hi, n in groups:
-            m = metrics(pk[mask], outcome[mask])
+            sel = mask & keep
+            if sel.sum() < 30:          # too thin to score once filtered
+                for name, _, _ in METRIC_PANELS:
+                    series[(name, short)].append(np.nan)
+                continue
+            m = metrics(pk[sel], outcome[sel])
             for name, _, _ in METRIC_PANELS:
                 series[(name, short)].append(m[name])
             rows.append({"snapshot": short, "x_field": field, "lo": lo,
-                         "hi": hi, "n": n, "brier": m["brier"],
+                         "hi": hi, "n": int(sel.sum()), "brier": m["brier"],
                          "logloss": m["logloss"], "base_rate": m["base_rate"],
                          "uncertainty": m["uncertainty"]})
 
@@ -551,10 +557,11 @@ def skill_heatmap(recs, plots_dir, tag="", x_field="volume",
     grids, counts = {}, np.zeros((ny, nx), dtype=int)
     for key, short, _ in SNAPSHOTS:
         pk = np.array([r[key] for r in recs], dtype=float)
+        keep = snapshot_mask(recs, short)
         g = np.full((ny, nx), np.nan)
         for iy in range(ny):
             for ix in range(nx):
-                m = (x_idx == ix) & (y_idx == iy)
+                m = (x_idx == ix) & (y_idx == iy) & keep
                 counts[iy, ix] = int(m.sum())
                 if m.sum() >= min_cell:
                     g[iy, ix] = metrics(pk[m], outcome[m])[metric]
@@ -609,8 +616,10 @@ def skill_heatmap(recs, plots_dir, tag="", x_field="volume",
 # settings -- edit here and run the file; there are no command-line arguments
 # --------------------------------------------------------------------------
 
-MIN_LIFETIME_DAYS = 0.0   # no filter: any cut on actual lifetime uses future info
-MIN_BETTORS = 0           # no filter: final trader count is not knowable at forecast time
+MIN_TRADERS = 3           # per snapshot: require this many traders *as of that
+                          # snapshot*. Each snapshot is therefore judged only on
+                          # markets that had real trading at the moment being
+                          # graded -- see snapshot_mask.
 BINS = 20                 # probability bins on the calibration plots
 MIN_BIN = 20              # hide calibration bins with fewer markets than this
 CI = "hpd"                # error-band method; see CI_METHODS for the options
@@ -622,30 +631,59 @@ ACTIVITY_BINS = 12        # target bin count on the accuracy-vs-activity plots
 TAG = ""                  # suffix for output filenames
 
 
+def snapshot_mask(recs, short):
+    """Markets with at least MIN_TRADERS traders as of the `short` snapshot.
+
+    Filtering per snapshot rather than globally is what keeps this free of
+    lookahead. A market's *final* trader count is not knowable when the
+    forecast is made, and neither is its actual lifetime -- but how many people
+    have traded by a given moment is visible at that moment.
+
+    It also removes a real artifact rather than a cosmetic one. A market that
+    resolves within 3 days has its "late" snapshot floored at creation, before
+    anyone traded, so it reports the untouched 0.50 opening price: 17.5% of
+    markets pile up at exactly 0.5000 in the late panel. Those are mostly
+    *active* markets that simply resolved fast, so a filter on early traders
+    keeps them; filtering on traders-as-of-late takes that share to 0.15%.
+
+    The cost is that the three snapshots are scored on overlapping but
+    different samples, so cross-snapshot comparisons are not strictly like for
+    like. Each snapshot's own number is the honest one.
+    """
+    return np.array([r.get(f"traders_{short}", 0) >= MIN_TRADERS for r in recs])
+
+
 def main():
 
     recs = load(os.path.join(DATA, "probs.jsonl"))
     total = len(recs)
-    recs = [r for r in recs
-            if r["until_closed_days"] >= MIN_LIFETIME_DAYS
-            and r["bettors"] >= MIN_BETTORS]
     if not recs:
-        raise SystemExit("no markets left after filtering")
+        raise SystemExit("no markets in data/probs.jsonl")
 
     os.makedirs(PLOTS, exist_ok=True)
-    print(f"loaded {total} markets, {len(recs)} after filters "
-          f"(lifetime >= {MIN_LIFETIME_DAYS}d, bettors >= {MIN_BETTORS})")
-    print(f"base rate: {np.mean([r['outcome'] for r in recs]):.4f} YES\n")
+    print(f"loaded {total:,} markets; no global filter -- each snapshot is "
+          f"graded on the markets that had >= {MIN_TRADERS} traders by then")
+    print(f"base rate (all markets): "
+          f"{np.mean([r['outcome'] for r in recs]):.4f} YES")
+    for _, short, _ in SNAPSHOTS:
+        k = snapshot_mask(recs, short)
+        o = np.array([r["outcome"] for r in recs], dtype=float)[k]
+        print(f"  {short:<6} graded on {k.sum():>7,} markets "
+              f"({100*k.mean():4.1f}%)   base rate {o.mean():.4f}")
+    print()
 
-    o = np.array([r["outcome"] for r in recs], dtype=float)
+    o_all = np.array([r["outcome"] for r in recs], dtype=float)
     results = {}
     for key, short, desc in SNAPSHOTS:
-        p = np.array([r[key] for r in recs], dtype=float)
+        keep = snapshot_mask(recs, short)
+        p = np.array([r[key] for r in recs], dtype=float)[keep]
+        o = o_all[keep]
         fname = f"calibration_{short}{TAG}.png"
         m = calibration_plot(
             p, o,
             title=f"Manifold calibration -- {short} in market life",
-            subtitle=f"{len(recs):,} resolved YES/NO markets   |   probability at {desc}",
+            subtitle=f"{keep.sum():,} of {len(recs):,} resolved YES/NO markets "
+                     f"(>= {MIN_TRADERS} traders by then)   |   probability at {desc}",
             path=os.path.join(PLOTS, fname),
             n_bins=BINS, min_bin=MIN_BIN,
             ci=CI, alpha=ALPHA, fit=FIT)
@@ -681,9 +719,8 @@ def main():
     print("lower reliability = better calibrated; higher resolution = more informative)")
     print("Gap = MeanPrice - ActualYES: positive means YES is priced too high on average.")
 
-    summary = {"n_total": total, "n_used": len(recs),
-               "filters": {"min_lifetime_days": MIN_LIFETIME_DAYS,
-                           "min_bettors": MIN_BETTORS},
+    summary = {"n_total": total, "n_loaded": len(recs),
+               "filters": {"min_traders_per_snapshot": MIN_TRADERS},
                "metrics": results, "metrics_by_activity": rows}
     with open(os.path.join(DATA, f"summary{TAG}.json"), "w",
               encoding="utf-8") as f:

@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analyze import load, metrics, SNAPSHOTS
+from analyze import load, metrics, snapshot_mask, SNAPSHOTS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -55,17 +55,14 @@ def load_topics():
 # --------------------------------------------------------------------------
 
 TOPICS = 100              # how many topics, taking those with the most markets
-MIN_LIFETIME_DAYS = 0.0   # no filter: any cut on actual lifetime uses future info
-MIN_BETTORS = 0           # no filter: final trader count is not knowable at forecast time
+                          # filtering is per snapshot; see analyze.snapshot_mask
 SORT = "early"            # "late", "mid", "early", "base_rate", "n" or "topic"
 TOP = 0                   # nonzero: print only the N best and N worst rows
 TAG = ""                  # suffix for output filenames
 
 
 def main():
-    recs = [r for r in load(os.path.join(DATA, "probs.jsonl"))
-            if r["until_closed_days"] >= MIN_LIFETIME_DAYS
-            and r["bettors"] >= MIN_BETTORS]
+    recs = load(os.path.join(DATA, "probs.jsonl"))
     topics = load_topics()
     have = [r for r in recs if r["id"] in topics]
     print(f"{len(recs):,} study markets, {len(have):,} with topics fetched "
@@ -85,13 +82,20 @@ def main():
     biggest = sorted(by_topic.items(), key=lambda kv: -len(kv[1]))[:TOPICS]
     rows = []
     for t, rs in biggest:
-        o = np.array([r["outcome"] for r in rs], dtype=float)
-        row = {"topic": t, "n": len(rs), "base_rate": float(o.mean())}
+        o_all = np.array([r["outcome"] for r in rs], dtype=float)
+        row = {"topic": t, "n": len(rs), "base_rate": float(o_all.mean())}
         for key, short, _ in SNAPSHOTS:
-            p = np.array([r[key] for r in rs], dtype=float)
-            m = metrics(p, o)
+            keep = snapshot_mask(rs, short)
+            if keep.sum() < 30:
+                row[short] = float("nan")
+                row[f"{short}_brier"] = float("nan")
+                row[f"{short}_n"] = int(keep.sum())
+                continue
+            p = np.array([r[key] for r in rs], dtype=float)[keep]
+            m = metrics(p, o_all[keep])
             row[short] = m["brier_skill"]
             row[f"{short}_brier"] = m["brier"]
+            row[f"{short}_n"] = int(keep.sum())
         rows.append(row)
 
     keymap = {"topic": lambda r: r["topic"], "n": lambda r: -r["n"],
