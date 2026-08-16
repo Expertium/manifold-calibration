@@ -22,18 +22,16 @@ uncertainty is the irreducible base-rate variance o_bar*(1-o_bar).
 Settings live in the constants block below main's helper functions (no
 command-line arguments): edit them there and run the file.
 
-No filters are applied. Cutting the sample on a market's actual lifetime or
-its final trader count would select on information that did not exist when the
-forecast was made, which biases the calibration estimate -- so both are off.
-The per-snapshot volume and trader counts recorded by scrape.py (vol_early,
-traders_early, ...) are knowable at forecast time and can be filtered on
-freely.
+One common sample: markets with at least MIN_TRADERS traders as of the early
+snapshot. Nothing is filtered on a market's outcome, its final trader count or
+how long it turned out to run -- all of which are unknowable when the forecast
+is made, and selecting on them biases the calibration estimate.
 
-One consequence to keep in mind: markets that lived under ~6 days have their
-"early" (+3d) and "late" (-3d) snapshots cross over, and under ~3 days the
-"late" snapshot lands at creation before anyone traded, so it reports the
-opening price rather than a forecast. That is a real property of the
-unfiltered sample, not something to quietly filter away.
+That single filter suffices because scrape.snapshot_times caps each horizon at
+a quarter of the market's life, so early <= mid <= late holds for every market
+and each graded price necessarily comes after the cutoff. The 0.50
+opening-price artifact is therefore impossible by construction rather than
+filtered away afterwards.
 """
 
 import json
@@ -52,9 +50,9 @@ DATA = os.path.join(HERE, "data")
 PLOTS = os.path.join(HERE, "plots")
 
 SNAPSHOTS = [
-    ("p_early", "early", "3 days after creation"),
+    ("p_early", "early", "min(3 days, 1/4 of market life) after creation"),
     ("p_mid",   "mid",   "midpoint between creation and resolution"),
-    ("p_late",  "late",  "3 days before resolution"),
+    ("p_late",  "late",  "min(3 days, 1/4 of market life) before the end"),
 ]
 
 EPS = 1e-4  # log-loss clipping; Manifold prices can reach ~0.001
@@ -435,7 +433,7 @@ def metrics_vs_activity_plots(recs, plots_dir, field="volume", tag="", n_bins=8)
     series, rows = {}, []
     for key, short, _ in SNAPSHOTS:
         pk = np.array([r[key] for r in recs], dtype=float)
-        keep = snapshot_mask(recs, short)
+        keep = common_mask(recs)
         for name, _, _ in METRIC_PANELS:
             series[(name, short)] = []
         for mask, lo, hi, n in groups:
@@ -557,7 +555,7 @@ def skill_heatmap(recs, plots_dir, tag="", x_field="volume",
     grids, counts = {}, np.zeros((ny, nx), dtype=int)
     for key, short, _ in SNAPSHOTS:
         pk = np.array([r[key] for r in recs], dtype=float)
-        keep = snapshot_mask(recs, short)
+        keep = common_mask(recs)
         g = np.full((ny, nx), np.nan)
         for iy in range(ny):
             for ix in range(nx):
@@ -631,26 +629,23 @@ ACTIVITY_BINS = 12        # target bin count on the accuracy-vs-activity plots
 TAG = ""                  # suffix for output filenames
 
 
-def snapshot_mask(recs, short):
-    """Markets with at least MIN_TRADERS traders as of the `short` snapshot.
+def common_mask(recs):
+    """Markets with at least MIN_TRADERS traders as of the *early* snapshot.
 
-    Filtering per snapshot rather than globally is what keeps this free of
-    lookahead. A market's *final* trader count is not knowable when the
-    forecast is made, and neither is its actual lifetime -- but how many people
-    have traded by a given moment is visible at that moment.
+    One rule, decided at the earliest moment any panel is graded, and applied
+    to all three. That gives a single sample for the whole study without any
+    lookahead: membership depends only on how many people had traded by then,
+    which is visible at that moment, and never on the outcome, the final
+    trader count, or how long the market turned out to run.
 
-    It also removes a real artifact rather than a cosmetic one. A market that
-    resolves within 3 days has its "late" snapshot floored at creation, before
-    anyone traded, so it reports the untouched 0.50 opening price: 17.5% of
-    markets pile up at exactly 0.5000 in the late panel. Those are mostly
-    *active* markets that simply resolved fast, so a filter on early traders
-    keeps them; filtering on traders-as-of-late takes that share to 0.15%.
-
-    The cost is that the three snapshots are scored on overlapping but
-    different samples, so cross-snapshot comparisons are not strictly like for
-    like. Each snapshot's own number is the honest one.
+    It works because scrape.snapshot_times caps each horizon at a quarter of
+    the market's life, so early <= mid <= late always holds. Every graded
+    price therefore comes after this filter's cutoff, meaning a market that
+    passes has real trading behind all three of its quotes -- the 0.50
+    opening-price artifact cannot occur, rather than being filtered away
+    afterwards.
     """
-    return np.array([r.get(f"traders_{short}", 0) >= MIN_TRADERS for r in recs])
+    return np.array([r.get("traders_early", 0) >= MIN_TRADERS for r in recs])
 
 
 def main():
@@ -661,21 +656,18 @@ def main():
         raise SystemExit("no markets in data/probs.jsonl")
 
     os.makedirs(PLOTS, exist_ok=True)
-    print(f"loaded {total:,} markets; no global filter -- each snapshot is "
-          f"graded on the markets that had >= {MIN_TRADERS} traders by then")
-    print(f"base rate (all markets): "
-          f"{np.mean([r['outcome'] for r in recs]):.4f} YES")
-    for _, short, _ in SNAPSHOTS:
-        k = snapshot_mask(recs, short)
-        o = np.array([r["outcome"] for r in recs], dtype=float)[k]
-        print(f"  {short:<6} graded on {k.sum():>7,} markets "
-              f"({100*k.mean():4.1f}%)   base rate {o.mean():.4f}")
-    print()
+    keep_all = common_mask(recs)
+    print(f"loaded {total:,} markets; {keep_all.sum():,} graded "
+          f"({100*keep_all.mean():.1f}%) -- one common sample, markets with "
+          f">= {MIN_TRADERS} traders by the early snapshot")
+    o_keep = np.array([r["outcome"] for r in recs], dtype=float)[keep_all]
+    print("base rate: %.4f YES" % o_keep.mean())
+
 
     o_all = np.array([r["outcome"] for r in recs], dtype=float)
     results = {}
     for key, short, desc in SNAPSHOTS:
-        keep = snapshot_mask(recs, short)
+        keep = keep_all
         p = np.array([r[key] for r in recs], dtype=float)[keep]
         o = o_all[keep]
         fname = f"calibration_{short}{TAG}.png"

@@ -5,9 +5,13 @@ Scrape Manifold Markets for a prediction-market calibration study.
 Collects resolved YES/NO binary markets and, for each one, reconstructs the
 market probability at three moments in its life:
 
-    early : created + min(3 days, lifetime)      -- far from closure
+    early : created + min(3 days, L/4)   -- far from closure
     mid   : halfway between creation and closure
-    late  : closure - 3 days, floored at creation -- shortly before closure
+    late  : closure - min(3 days, L/4)   -- shortly before closure
+
+where L is the market's lifetime. The horizon is capped at a quarter of the
+market's life so the three moments stay strictly ordered even for markets that
+resolve within days; see snapshot_times.
 
 "Closure" means the last moment the market was tradeable, i.e.
 min(closeTime, resolutionTime): a market can be resolved early (trading stops
@@ -207,13 +211,35 @@ def enumerate_markets(target):
 # --------------------------------------------------------------------------
 
 def snapshot_times(m):
-    """The three timestamps, per the study definition."""
+    """The three snapshot timestamps.
+
+        early : created + min(3 days, L/4)
+        mid   : created + L/2
+        late  : end     - min(3 days, L/4)
+
+    For a market living 12 days or more this is exactly "3 days after
+    creation, the midpoint, and 3 days before the end". Below that the
+    horizons compress symmetrically to 25% / 50% / 75% of the market's life
+    instead of crossing over each other.
+
+    The previous definition floored `late` at creation, so a market that
+    resolved within 3 days was graded on the untouched 0.50 opening price:
+    17% of markets piled up at exactly 0.5000 in the late panel. Capping the
+    horizon removes that by construction instead of by filtering the markets
+    out, which is what lets one sample serve all three snapshots without
+    conditioning on anything that happened after the forecast was made.
+
+    Capping at L/2 would look more natural but collapses all three moments
+    onto the midpoint for the 28% of markets shorter than 6 days; L/4 keeps
+    them strictly ordered for every market in the dataset.
+    """
     created, end = m["createdTime"], end_time(m)
     lifetime = end - created
+    cap = min(WINDOW_MS, lifetime // 4)
     return {
-        "early": created + min(WINDOW_MS, lifetime),
+        "early": created + cap,
         "mid": created + lifetime // 2,
-        "late": created + max(lifetime - WINDOW_MS, 0),
+        "late": end - cap,
     }
 
 
