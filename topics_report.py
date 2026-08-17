@@ -27,7 +27,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analyze import load, metrics, snapshot_mask, SNAPSHOTS
+from analyze import load, metrics, common_mask, SNAPSHOTS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -55,7 +55,7 @@ def load_topics():
 # --------------------------------------------------------------------------
 
 TOPICS = 100              # how many topics, taking those with the most markets
-                          # filtering is per snapshot; see analyze.snapshot_mask
+                          # one common sample; see analyze.common_mask
 SORT = "early"            # "late", "mid", "early", "base_rate", "n" or "topic"
 TOP = 0                   # nonzero: print only the N best and N worst rows
 TAG = ""                  # suffix for output filenames
@@ -84,18 +84,17 @@ def main():
     for t, rs in biggest:
         o_all = np.array([r["outcome"] for r in rs], dtype=float)
         row = {"topic": t, "n": len(rs), "base_rate": float(o_all.mean())}
+        keep = common_mask(rs)
+        row["n_graded"] = int(keep.sum())
         for key, short, _ in SNAPSHOTS:
-            keep = snapshot_mask(rs, short)
             if keep.sum() < 30:
                 row[short] = float("nan")
                 row[f"{short}_brier"] = float("nan")
-                row[f"{short}_n"] = int(keep.sum())
                 continue
             p = np.array([r[key] for r in rs], dtype=float)[keep]
             m = metrics(p, o_all[keep])
             row[short] = m["brier_skill"]
             row[f"{short}_brier"] = m["brier"]
-            row[f"{short}_n"] = int(keep.sum())
         rows.append(row)
 
     keymap = {"topic": lambda r: r["topic"], "n": lambda r: -r["n"],
